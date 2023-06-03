@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 import os
 
+from pandas import DataFrame
+
 
 class IMDBCrawler:
     def __init__(self):
@@ -15,13 +17,16 @@ class IMDBCrawler:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
             , 'accept-language': 'en-US'
         }
-        self.dataframe_names = ['movies_url', 'movie_details', 'movie_details', 'genre', 'cast', 'crew']
-        self.movies_url = pd.DataFrame(columns=['id', 'url'])
-        self.movie_details = pd.DataFrame(columns=['id', 'title', 'year', 'runtime', 'parental_guide', 'budget'])
-        self.person_details = pd.DataFrame(columns=['id', 'name'])
+        self.dataframe_names = ['movies_url', 'movie', 'person', 'genre', 'cast', 'crew', 'crawled_movies_url']
+        self.movies_url = pd.DataFrame(columns=['url'])
+        self.movie = pd.DataFrame(
+            columns=['id', 'title', 'year', 'runtime', 'parental_guide', 'budget', 'gross_us_canada',
+                     'gross_worldwide'])
+        self.person = pd.DataFrame(columns=['id', 'name'])
         self.genre = pd.DataFrame(columns=['movie_id', 'genre'])
         self.cast = pd.DataFrame(columns=['movie_id', 'person_id'])
         self.crew = pd.DataFrame(columns=['movie_id', 'person_id', 'role'])
+        self.crawled_movies_url = pd.DataFrame(columns=['url'])
 
     def start_crawling(self):
         self.create_data_directory()
@@ -64,10 +69,9 @@ class IMDBCrawler:
                 soup = BeautifulSoup(response.content, 'html.parser')
                 for movie in soup.select('.titleColumn'):
                     url = movie.find('a').get('href')
-                    id = url.split('/')[2]
-                    self.movies_url.loc[len(self.movies_url)] = [id, url]
+                    self.movies_url.loc[len(self.movies_url)] = [url]
 
-                self.save_csv('top250_movies')
+                self.save_csv('movies_url')
 
             except Exception as e:
                 req_failed_count += 1
@@ -79,7 +83,22 @@ class IMDBCrawler:
         pass
 
     def crawl_movies_url(self):
-        pass
+        print('crawl_movies_url started')
+
+        new_url = set()
+        self.movies_url.apply(lambda row: new_url.add(row['url']), axis=1)
+        print("count of loaded url: ", len(new_url))
+
+        crawled_url = set()
+        self.crawled_movies_url.apply(lambda row: crawled_url.add(row['url']), axis=1)
+
+        new_url = new_url - crawled_url
+        print(print("count of new url: ", len(new_url)))
+
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            futures = (executor.submit(self.scrap_movie_page, url) for url in new_url)
+            for future in as_completed(futures):
+                pass
 
 
 if __name__ == '__main__':
